@@ -58,7 +58,7 @@ License: MIT
          * Color of the "empty" arc. Only a color fill supported by now
          * @type {string}
          */
-        emptyFill: 'rgba(0, 0, 0, .1)',
+        emptyFill: 'rgba(0, 0, 0, .4)',
 
         /**
          * Animation config (see jQuery animations: http://api.jquery.com/animate/)
@@ -154,8 +154,12 @@ License: MIT
          */
         initWidget: function() {
             var canvas = this.canvas = this.canvas || $('<canvas>').prependTo(this.el)[0];
-            canvas.width = this.size;
-            canvas.height = this.size;
+            //console.log("canvas parent: ", this.el);
+            canvas.style.width='100%';
+            canvas.style.padding = '10px';
+            canvas.style.height='auto';
+            canvas.width  = this.el.width();
+            canvas.height = this.el.height();
             this.ctx = canvas.getContext('2d');
         },
 
@@ -248,6 +252,9 @@ License: MIT
         drawFrame: function(v) {
             this.lastFrameValue = v;
             this.ctx.clearRect(0, 0, this.size, this.size);
+
+
+
             this.drawEmptyArc(v);
             this.drawArc(v);
         },

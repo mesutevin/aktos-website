@@ -2,189 +2,344 @@ require! {
   '../modules/aktos-dcs': {
     ProxyActor,
     RactivePartial,
-    SwitchActor,
-    RactiveApp, 
+    RactiveApp,
   }
 }
-  
-# get scada layouts 
+# get scada layouts
 {widget-positions} = require './scada-layout'
 
-# include widgets' initialize codes 
+# include widgets' initialize codes
 require '../partials/ractive-partials'
-  
+
 # Set Ractive.DEBUG to false when minified:
 Ractive.DEBUG = /unminified/.test !-> /*unminified*/
 
 app = new Ractive do
   el: 'container'
   template: '#app'
+  data:
+    marked: marked
+    JSON: JSON
 
+# Register ractive app in order to use in partials
 RactiveApp!set app
 
 # Create the actor which will connect to the server
 proxy-actor = ProxyActor!
 
 app.on 'complete', !->
-  #console.log "window.location: ", window.location
-  if not window.location.hash
-    window.location = '#home-page'
-   
   # create actors and init widgets
   RactivePartial! .init!
-
-  # debugging purposes
-  #test = SwitchActor 'test-actor'
 
   $ document .ready ->
     console.log "document is ready..."
     RactivePartial! .init-for-document-ready!
-        
-    RactivePartial! .init-for-dynamic-pos widget-positions
-    # debug 
-    /*
-    test.send IoMessage:
-      pin_name: 'test-pin'
-      val: on
-    */
 
-  
-  # Update all I/O on init
-  proxy-actor.update-connection-status!
-  
+    proxy-actor.update-connection-status!
+
+    RactivePartial! .init-for-dynamic-pos widget-positions
+
+
+    set-timeout (->
+      RactivePartial! .init-for-post-ready!
+      # Update all I/O on init
+      ), 1000ms
+
+
   console.log "ractive app completed..."
-  
-  /*
-  console.log "Testing sending data to table from app.ls"
+
+# ----------------------------------------------------
+#             All test code goes below
+# ----------------------------------------------------
+require! {
+  '../modules/aktos-dcs': {
+    SwitchActor,
+  }
+}
+
+require! {
+  '../modules/prelude': {
+    flatten,
+    initial,
+    drop,
+    join,
+    concat,
+    tail,
+    head,
+    map,
+    zip,
+    split,
+    last,
+    filter,
+  }
+}
+
+RactivePartial!register ->
+  #console.log "Testing sending data to table from app.ls"
   test = SwitchActor 'test-actor'
   test.send IoMessage:
     pin_name: \test-table
     table_data:
-      * <[ bir iki üç dört beş ]>
-      * <[ 1bir 1iki 1üç 1dört 1beş ]>
-      * <[ 2bir 2iki 2üç 2dört 2beş ]>
-  */
-  
+      <[ a b c d e ]>
+      <[ a1 b1 c1 d1 e1 ]>
+      <[ a2 b2 c2 d2 e2 ]>
+
+
+RactivePartial!register ->
+  poll-gms = ->
+    $.ajax do
+      method: "GET"
+      url: "gms/WebService1.asmx/GetRooms"
+      data-type: 'json'
+      success: (response) ->
+        #console.log "got gms data..."
+        app.set \gms, response
+
+  poll-gms!
+  set-interval poll-gms, 30_000ms
+
+
+# test trello
+RactivePartial!register-for-document-ready ->
+  #console.log "Trello integration test..."
+
+  authorized = false
+  on-authorize = ->
+    if Trello.authorized!
+      authorized := true
+      #console.log "trello authorization is successful"
+      Trello.members.get "me", (member) ->
+        app.set \trelloData.member, member
+
+      Trello.get "members/me/boards", (boards) ->
+        app.set \trelloData.boards, boards
+
+        board-id = filter (.shortLink is 'xnRCqVHI'), boards .0.id
+        get-cards = ->
+          if authorized
+            Trello.get "/boards/#{board-id}/cards", (cards) ->
+              #console.log "getting cards for board #{board-id}"
+              app.set 'trelloData.cards', cards
+              actions = []
+              for i in cards
+                Trello.get "/cards/#{i.id}/actions", (a) ->
+                  actions.push a
+                  if actions.length is cards.length
+                    app.set \trelloData.card_actions, actions
+                    app.set \trelloData.card_comments, [i.data.text for action in actions for i in action when i?.type is \commentCard ]
+                    #console.log actions
+
+              set-timeout get-cards, 12000ms
+
+        get-cards!
+
+
+
+      #console.log "trello on-authorize is ended..."
+    else
+      console.log "BUG: trello test: on-authorize! is called before authorized!"
+
+  # authorize
+  #console.log "authorizing to trello silently..."
+  trello-silent-login = ->
+    Trello.authorize do
+        interactive:false
+        success: on-authorize
+
+  trello-silent-login!
+
+
+  #app.on \trello, actions
+  app.on do
+    trello_login: ->
+      console.log "logging in to Trello"
+      Trello.authorize do
+        type: "popup"
+        success: on-authorize
+    trello_logout: ->
+      console.log "disconnecting from Trello"
+      Trello.deauthorize!
+      authorized := false
+      app.set \trelloData, null
+
+RactivePartial!register ->
+  menu =
+    brand:
+      name: 'aktos'
+      icon: 'img/aktos-icon.png'
+    links:
+      * name: 'İşler'
+        addr: '#/applications'
+      * name: 'Ürünler'
+        addr: '#/products'
+      * name: 'Demo'
+        addr: '#/demos'
+      * name: 'İletişim'
+        addr: '#/contact-page'
+
+  app.set "page.menu", menu
+
+RactivePartial!register ->
+  projects =
+    * label: 'Cici Meze'
+      src: 'projects/cici-meze/proje-kapak.jpg'
+      addr: '#/cici-meze'
+
+    * label: 'Akhisar Atıksu Arıtma'
+      src: 'projects/akhisar-atiksu/proje-kapak-2.jpg'
+      addr: '#akhisar-atiksu'
+
+    * label: 'Doğanbey Atıksu Arıtma'
+      src: 'projects/doganbey-atiksu/proje-kapak-2.jpg'
+      addr: '#doganbey-atiksu'
+
+    * label: 'Delphi Otomotiv (İzmir)'
+      src: 'projects/delphi-kablo-zirhi-soyma/proje-kapak-2.png'
+      addr: '#delphi-otomotiv-izmir'
+
+    * label: 'HMS Üretim Takip'
+      src: 'projects/hms-telemetri/proje-kapak-2.jpg'
+
+    * label: 'İski Terfi İstasyonu'
+      src: 'projects/iski/scada.jpg'
+
+    * label: 'Newtech Cep Otomatı'
+      src: 'projects/lintek-newtech-cep-otomati/proje-kapak-2.jpg'
+
+    * src: 'projects/versis-asfalt-plenti/proje-kapak.jpg'
+      label: 'Versis Asfalt Plenti'
+
+    * label: 'Serel Seramik Üretim Takip'
+      src: 'projects/serel/proje-kapak-2.jpg'
+
+    * label: 'Gama-Gama Korelasyon Deney Otomasyonu'
+      src: 'projects/kku-nukleer-fizik-lab/proje-kapak.jpg'
+
+  app.set \page.projects, projects
+
+
+RactivePartial!register ->
+  home =
+    about-us:
+      header: \Hakkımızda
+      body-short: """
+        Yıllar süren saha tecrübeleri neticesinde bir karara vardık: Otomasyon alanındaki işlerin %90'ında telefon açmak yerine güvercinle haberleşiliyor, araba satın alınsa tekerleksiz geliyor, çay içseniz demlik parası isteniyor, uçak tercih edilse 48 saat rötar yapıyor, dava açsanız 70 sene sürüyor.
+
+        "Hayat böyle saçma şeyler için fazla kısa" dedik ve ihtiyacımız olanı kendimiz ürettik.
+        """
+
+      body-rest: """
+        [**A**](#)çık [**K**](#)aynaklı [**T**](#)elemetri ve [**O**](#)tomasyon [**S**](#)istemleri üretiyor ve bunları kullanarak projeler gerçekleştiriyoruz. Odak noktamızda 1000 giriş çıkışın üzerindeki tesis ve sistemlerin otomasyonları ve binlerce mobil/sabit sistemin birbirine internet üzerinden bağlı çalışması gereken sistemler bulunuyor.
+
+        İşlerimizin çoğunda problemleri yazılımla çözeriz. Gerektiğinde elektronik donanım tasarlamak, imal etmek, tersine mühendislik çalışması yapmak ve mekanik donanım imal etmek de faaliyet konumuzun ayrılmaz birer parçasıdır.
+
+        Küçük ve orta ölçekli projeleri müşterinin talep edeceği herhangi bir platformda (Omron, GE Fanuc, Phoenix Contact, Trio Motion, vb...) yapabilmekle birlikte kendi platformumuz olan [aktos-dcs](#/aktos-dcs), [aktos-scada](#/aktos-scada) ve [aktos-io](#/aktos-io) kullanarak yapmayı tercih ederiz.
+
+        Büyük ölçekli projelerde yazılım alt yapısı olarak [aktos-dcs](#/aktos-dcs) ve [aktos-scada](#/aktos-scada) kullanırız. Müşteri, donanım markası konusunda (Aktos, Omron, GE Fanuc, Phoenix Contact, OEM) tercih yapmakta özgürdür.
+        """
+    news:
+      * target-date: "13.09.2015"
+        header: "İzmirHS Dağınık Programlama Eğitimi"
+        body-short: """
+          Kurucularından olduğumuz İzmir Hackerspace'de Dağınık
+          programlama eğitimi verildi.
+          """
+
+      * target-date: "25.09.2015"
+        header: "DEÜ Dağınık Programlama Eğitimi"
+        body-short: """
+          9 Eylül Üniversitesi'nde;
+
+          * dağınık programlama
+          * paralel programlama
+          * realtime web arayüzü hazırlanması
+
+          konularında eğitim verilecektir. Katılım için kayıt:
+          info@aktos-elektronik.com
+
+          """
+
+  app.set \page.home, home
+
+
+RactivePartial!register ->
+  products =
+    * label: 'aktos-dcs'
+      src: 'projects/aktos-dcs/aktos-dcs-logo-1.1.png'
+      short-desc: """
+        Otomasyon ve telemetri sistemleri için yazılım altyapısı
+        """
+      addr: 'https://github.com/ceremcem/aktos-dcs'
+
+    * label: 'aktos-ipc'
+      src: 'projects/aktos-ipc/proje-kapak.jpg'
+      short-desc: """
+        Endüstriyel PC
+        """
+
+    * label: 'aktos-scada'
+      src: 'projects/aktos-scada/widgets.png'
+      short-desc: """
+        aktos-dcs uyumlu sistemler için web tabanlı realtime scada uygulaması
+        """
+      addr: '#/demos'
+
+    * label: 'dijital termometre'
+      src: 'projects/dijital-termometre/proje-kapak.jpg'
+      short-desc: """
+        sıcaklık takip otomasyonları için endüstriyel dijital termometre
+        """
+
+    * label: 'elektrik sayacı okuyucu'
+      src: 'projects/energy-meter-reader/kapak.jpg'
+
   /*
-  
+    * label: 'GSM Modem'
+      src: 'projects/aktos-gsm-modem/proje-kapak.jpg'
+
+    * label: 'aktos-hmi'
+      src: 'projects/aktos-hmi/tesis-ustten.jpg'
+      short-desc: """
+        Endüstriyel HMI ürünleri
+        """
+    */
+
+  app.set \page.products, products
+
+  /*
+
   console.log "Performance testing via gauge-slider pin"
-      
+
   test2 = SwitchActor \gauge-slider
-  
+
   i = 0
   j = +1
-  up = -> 
+  up = ->
     test2.gui-event i
     #app.set \abc, i
-    if i >= 100 
-      j := -1 
-    if i <= 0 
+    if i >= 100
+      j := -1
+    if i <= 0
       j := +1
     i := i + j
     set-timeout up, 1000
-    
+
   set-timeout up, 2000
-  
+
   test3 = SwitchActor \gauge-slider2
-  
+
   k = 0
   l = +1
-  up2 = -> 
+  up2 = ->
     test3.gui-event k
     #app.set \abc, k
-    if k >= 100 
-      l := -1 
-    if k <= 0 
+    if k >= 100
+      l := -1
+    if k <= 0
       l := +1
     k := k + l
     set-timeout up2, 1000
-    
+
   set-timeout up2, 2000
-    
+
   */
-  
-  drag-move-listener = (event) -> 
-    target = event.target
-    x = ((parse-float target.get-attribute \data-x) or 0) + event.dx
-    y = ((parse-float target.get-attribute \data-y) or 0) + event.dy
-    
-    a = 'translate(' + x + 'px, ' + y + 'px)'
-    target.style.webkit-transform = a
-    target.style.transform = a
-
-    target.set-attribute \data-x, x 
-    target.set-attribute \data-y, y
-  
-  interact \.draggable .draggable do
-    snap: 
-      targets: 
-        * interact.createSnapGrid({ x: 10, y: 10 })
-        ...
-      range: Infinity,
-      relativePoints: 
-        * { x: 0, y: 0 } 
-        ...
-    inertia: true
-    restrict: 
-      restriction: \.scada-drawing-area
-      end-only: true
-      element-rect: {top: 0, left: 0, bottom: 1, right: 1}
-      
-    onmove: drag-move-listener
-    onend: (event) -> 
-      console.log "moved: x: #{event.dx} y: #{event.dy}"
-    
-  .resizable edges: { left: no, right: yes, bottom: yes, top: no }
-  .on \resizemove, (event) -> 
-    target = event.target
-    x = ((parse-float target.get-attribute \data-x) or 0) + event.dx
-    y = ((parse-float target.get-attribute \data-y) or 0) + event.dy
-    
-    # update the element's style
-    target.style.width  = event.rect.width + 'px'
-    target.style.height = event.rect.height + 'px'
-  
-    
-    
-    # translate when resizing from top or left edges
-    x += event.deltaRect.left
-    y += event.deltaRect.top
-    
-    console.log "event.delta-rect: ", event.deltaRect.left, event.delta-rect.right
-    
-    a = 'translate(' + x + 'px, ' + y + 'px)'
-    target.style.webkit-transform = a
-    target.style.transform = a
-    
-    #target.set-attribute \data-x, x 
-    #target.set-attribute \data-y, y
-    
-    console.log "resized: ", event.rect.width + '×' + event.rect.height
-  
-
-RactivePartial! .register-for-document-ready ->   
-  # lock scada
-  lock = SwitchActor \lock-scada
-  
-  lock.add-callback (msg) -> 
-    if msg.val is true 
-      $ \.draggable .each -> 
-        $ this .remove-class \draggable 
-        $ this .add-class \draggable-locked
-    else
-      $ \.draggable-locked .each -> 
-        $ this .remove-class \draggable-locked 
-        $ this .add-class \draggable
-    
-  # lock scada externally 
-  #SwitchActor \lock-scada .gui-event on
-  
-  
-# TODO: remove this
-# workaround for seamless page refresh
-$ '#reload' .click -> location.reload!
-
-
-
-    
-  

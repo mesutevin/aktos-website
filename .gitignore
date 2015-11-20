@@ -1,6 +1,8 @@
 *.pyc
 production
-public
+/public
+server/public.*
+server/public-*
 node_modules
 *.kate-swp
 vendor-*
@@ -9,3 +11,5 @@ app/assets/demos
 disabled/*
 **/orig--no-sync
 .kateproject.d
+.kateproject
+npm-debug.log

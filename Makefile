@@ -16,9 +16,38 @@ new-client:
 	@firefox -new-tab -url http://localhost:4000 2>/dev/null &
 
 run-ide:
-	@#kate .kateproject 2>/dev/null &
-	atom . 
+	# this is fallback ide
+	echo '{"name": "aktos-webui", "files": [ { "directory": ".",  "recursive": 1 } ]}' > .kateproject
+	@kate .kateproject 2>/dev/null &
+
+run-ide-atom:
+	atom .
+
 run-brunch:
 	@brunch b && brunch w
-run-server:
-	@lsc server/server.ls
+
+run-development-server:
+	cd server && lsc server.ls
+
+run-production-server:
+	npm run server
+
+update-production:
+	brunch b
+	rm -r server/public.bak 2> /dev/null; true 
+	mv server/public/ server/public.bak 
+	mv public server/
+
+update-production-old:
+	git pull
+	if [ ! -d "server/public.to-remove-1" ]; then \
+		if [ -d "./public" ]; then \
+			mv server/public server/public.to-remove-1; \
+			mv public server; \
+		fi; \
+	fi;
+	brunch b
+	mv server/public server/public.to-remove-2 2> /dev/null; true
+	ln -s ../public server
+	rm -rf server/public.to-remove-1 2> /dev/null; true
+	rm -rf server/public.to-remove-2 2> /dev/null; true
